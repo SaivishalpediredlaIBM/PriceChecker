@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL database ────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: price-chatbot-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pricedb
+      POSTGRES_USER: priceuser
+      POSTGRES_PASSWORD: pricepassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U priceuser -d pricedb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Price Comparison Chatbot ───────────────────────────────────
+  price-chatbot:
+    build:
+      context: .
+      dockerfile: src/main/docker/Dockerfile.jvm
+    container_name: price-chatbot-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # OpenAI – set via .env file or shell export
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+      # Override H2 defaults with PostgreSQL for docker-compose
+      QUARKUS_DATASOURCE_DB_KIND: postgresql
+      QUARKUS_DATASOURCE_USERNAME: priceuser
+      QUARKUS_DATASOURCE_PASSWORD: pricepassword
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/pricedb
+      QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION: update
+
+      # Logging
+      QUARKUS_LOG_LEVEL: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/q/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres_data:
